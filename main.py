@@ -135,9 +135,16 @@ class GridTradingBot:
             # 启动WebSocket处理器
             websocket_task = asyncio.create_task(self.websocket_handler.start())
 
-            # 监控停止信号
+            # 监控停止信号和风险指标
+            risk_log_counter = 0
             while not self.stop_signal:
                 await asyncio.sleep(1)
+
+                # 每60秒记录一次风险指标
+                risk_log_counter += 1
+                if risk_log_counter >= 60:
+                    self.grid_strategy.log_risk_metrics()
+                    risk_log_counter = 0
 
             # 收到停止信号，取消WebSocket任务
             logger.info("收到停止信号，正在停止WebSocket...")

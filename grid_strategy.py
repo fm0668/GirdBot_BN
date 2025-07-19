@@ -9,6 +9,7 @@ from config import (
     API_WEIGHT_LIMIT_PER_MINUTE, FETCH_ORDERS_WEIGHT, SAFETY_MARGIN,
     ENABLE_HEDGE_INITIALIZATION, HEDGE_INIT_DELAY
 )
+from risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,10 @@ class GridStrategy:
     def __init__(self, exchange_client):
         self.exchange_client = exchange_client
         self.lock = asyncio.Lock()
-        
+
+        # 风险管理器
+        self.risk_manager = RiskManager(exchange_client, 10)  # 默认10倍杠杆
+
         # 价格相关
         self.latest_price = 0
         self.best_bid_price = None
@@ -414,32 +418,58 @@ class GridStrategy:
             return False
 
     async def place_long_orders(self, latest_price):
-        """挂多头订单（修复止盈价格计算错误）"""
+        """挂多头订单（简化版风险管理）"""
         try:
             self.get_take_profit_quantity(self.long_position, 'long')
             if self.long_position > 0:
-                # 删除装死模式，始终执行正常网格策略
+                # 简化的风险管理：只检查订单大小
+                base_quantity = self.get_final_quantity(self.long_position, 'long')
+
+                # 确保订单金额满足最小要求（5 USDC）
+                min_notional = 5.0
+                min_quantity = min_notional / latest_price * 1.1  # 增加10%缓冲
+                safe_quantity = max(base_quantity, min_quantity)
+
+                # 执行正常网格策略
                 self.update_mid_price('long', latest_price)
                 self.cancel_orders_for_side('long')
-                self.place_take_profit_order('long', self.upper_price_long, self.long_initial_quantity)
-                self.exchange_client.place_order('buy', self.lower_price_long, self.long_initial_quantity, False, 'long')
-                logger.info("挂多头止盈，挂多头补仓")
+                self.place_take_profit_order('long', self.upper_price_long, safe_quantity)
+                self.exchange_client.place_order('buy', self.lower_price_long, safe_quantity, False, 'long')
+                logger.info(f"挂多头订单，数量: {safe_quantity}")
         except Exception as e:
             logger.error(f"挂多头订单失败: {e}")
 
     async def place_short_orders(self, latest_price):
-        """挂空头订单（修复止盈价格计算错误）"""
+        """挂空头订单（简化版风险管理）"""
         try:
             self.get_take_profit_quantity(self.short_position, 'short')
             if self.short_position > 0:
-                # 删除装死模式，始终执行正常网格策略
+                # 简化的风险管理：只检查订单大小
+                base_quantity = self.get_final_quantity(self.short_position, 'short')
+
+                # 确保订单金额满足最小要求（5 USDC）
+                min_notional = 5.0
+                min_quantity = min_notional / latest_price * 1.1  # 增加10%缓冲
+                safe_quantity = max(base_quantity, min_quantity)
+
+                # 执行正常网格策略
                 self.update_mid_price('short', latest_price)
                 self.cancel_orders_for_side('short')
-                self.place_take_profit_order('short', self.lower_price_short, self.short_initial_quantity)
-                self.exchange_client.place_order('sell', self.upper_price_short, self.short_initial_quantity, False, 'short')
-                logger.info("挂空头止盈，挂空头补仓")
+                self.place_take_profit_order('short', self.lower_price_short, safe_quantity)
+                self.exchange_client.place_order('sell', self.upper_price_short, safe_quantity, False, 'short')
+                logger.info(f"挂空头订单，数量: {safe_quantity}")
         except Exception as e:
             logger.error(f"挂空头订单失败: {e}")
+
+    def log_risk_metrics(self):
+        """记录风险指标（简化版）"""
+        try:
+            # 简化的风险监控，只记录基本持仓信息
+            logger.info(f"💰 持仓状态 - 多头: {self.long_position} 张, "
+                       f"空头: {self.short_position} 张, "
+                       f"当前价格: {self.latest_price:.5f}")
+        except Exception as e:
+            logger.debug(f"获取风险指标失败: {e}")
 
     async def adjust_grid_strategy(self):
         """根据最新价格和持仓调整网格策略（删除装死模式后的简化版本）"""

@@ -7,6 +7,14 @@ from config import WEBSOCKET_URL, SYNC_TIME
 
 logger = logging.getLogger(__name__)
 
+class ConnectionState:
+    """WebSocket连接状态"""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    RECONNECTING = "reconnecting"
+    FAILED = "failed"
+
 
 class WebSocketHandler:
     """WebSocket处理器，负责处理实时数据流"""
@@ -28,6 +36,19 @@ class WebSocketHandler:
 
         # 停止信号
         self.stop_signal = False
+
+        # 连接状态管理
+        self.connection_state = ConnectionState.DISCONNECTED
+        self.reconnect_count = 0
+        self.max_retries = 5
+        self.retry_delay = 5
+        self.last_heartbeat = time.time()
+
+        # 错误处理
+        self.error_count = 0
+        self.max_errors = 10
+        self.consecutive_errors = 0
+        self.last_successful_message = time.time()
 
 
         
