@@ -379,7 +379,8 @@ class GridStrategy:
         """初始化多头订单"""
         current_time = time.time()
         if current_time - self.last_long_order_time < ORDER_FIRST_TIME:
-            logger.info(f"距离上次多头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
+            # 降低日志级别，避免冗余输出
+            logger.debug(f"距离上次多头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
             return
 
         self.cancel_orders_for_side('long')
@@ -393,7 +394,8 @@ class GridStrategy:
         """初始化空头订单"""
         current_time = time.time()
         if current_time - self.last_short_order_time < ORDER_FIRST_TIME:
-            print(f"距离上次空头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
+            # 降低日志级别，避免冗余输出
+            logger.debug(f"距离上次空头挂单时间不足 {ORDER_FIRST_TIME} 秒，跳过本次挂单")
             return
 
         self.cancel_orders_for_side('short')
@@ -529,7 +531,13 @@ class GridStrategy:
 
         # 检测多头持仓
         if self.long_position == 0:
-            print(f"检测到没有多头持仓{self.long_position}，初始化多头挂单@ ticker")
+            # 如果刚完成对冲初始化，给一些时间让订单成交
+            current_time = time.time()
+            if self.hedge_init_completed and current_time - self.last_hedge_init_time < 15:
+                # 对冲初始化后15秒内，避免冗余的单独初始化尝试
+                return
+
+            logger.debug(f"检测到没有多头持仓{self.long_position}，初始化多头挂单@ ticker")
             await self.initialize_long_orders()
         else:
             orders_valid = (not (0 < self.buy_long_orders <= self.long_initial_quantity) or
@@ -552,6 +560,12 @@ class GridStrategy:
 
         # 检测空头持仓
         if self.short_position == 0:
+            # 如果刚完成对冲初始化，给一些时间让订单成交
+            current_time = time.time()
+            if self.hedge_init_completed and current_time - self.last_hedge_init_time < 15:
+                # 对冲初始化后15秒内，避免冗余的单独初始化尝试
+                return
+
             await self.initialize_short_orders()
         else:
             orders_valid = (not (0 < self.sell_short_orders <= self.short_initial_quantity) or
