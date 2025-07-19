@@ -54,6 +54,8 @@ class GridStrategy:
         self.hedge_initialization_enabled = ENABLE_HEDGE_INITIALIZATION
         self.hedge_init_delay = HEDGE_INIT_DELAY
         self.pending_hedge_initialization = False
+        self.hedge_init_completed = False  # 标记对冲初始化是否已完成
+        self.last_hedge_init_time = 0      # 上次对冲初始化时间
 
         # API调用频率控制
         self.last_orders_sync_time = 0
@@ -82,6 +84,14 @@ class GridStrategy:
 
     def update_positions(self, long_position, short_position):
         """更新持仓信息"""
+        # 检查是否需要重置对冲初始化状态
+        if (self.hedge_init_completed and
+            (long_position == 0 and short_position == 0) and
+            (self.long_position != 0 or self.short_position != 0)):
+            # 从有持仓变为无持仓，重置对冲初始化状态
+            self.hedge_init_completed = False
+            logger.info("🔄 持仓已清空，重置对冲初始化状态")
+
         self.long_position = long_position
         self.short_position = short_position
 
@@ -496,14 +506,26 @@ class GridStrategy:
         self.check_and_reduce_positions()
 
         # 对冲初始化模式：同时检查多头和空头是否需要初始化
-        if self.hedge_initialization_enabled and self.long_position == 0 and self.short_position == 0:
-            logger.info("🎯 检测到双向无持仓，启动对冲初始化模式")
-            hedge_success = await self.initialize_hedge_orders()
-            if hedge_success:
-                logger.info("✅ 对冲初始化完成，跳过单独初始化")
-                return
+        if (self.hedge_initialization_enabled and
+            self.long_position == 0 and self.short_position == 0 and
+            not self.hedge_init_completed):
+
+            current_time = time.time()
+            # 避免频繁尝试对冲初始化
+            if current_time - self.last_hedge_init_time >= 5:  # 5秒间隔
+                logger.info("🎯 检测到双向无持仓，启动对冲初始化模式")
+                hedge_success = await self.initialize_hedge_orders()
+                self.last_hedge_init_time = current_time
+
+                if hedge_success:
+                    logger.info("✅ 对冲初始化完成，跳过单独初始化")
+                    self.hedge_init_completed = True  # 标记已完成
+                    return
+                else:
+                    logger.warning("⚠️ 对冲初始化失败，回退到单独初始化模式")
             else:
-                logger.warning("⚠️ 对冲初始化失败，回退到单独初始化模式")
+                # 避免频繁日志输出
+                return
 
         # 检测多头持仓
         if self.long_position == 0:
