@@ -19,13 +19,10 @@ LEVERAGE = 10  # 杠杆倍数
 WEBSOCKET_URL = "wss://fstream.binance.com/ws"  # WebSocket URL
 
 # ==================== 风控配置 ====================
-POSITION_THRESHOLD = 500  # 锁仓阈值
-POSITION_LIMIT = 100  # 持仓数量阈值
-MAX_POSITION_RATIO = 0.8  # 最大仓位比例
-STOP_LOSS_RATIO = 0.1     # 止损比例
-VOLATILITY_WINDOW = 100   # 波动率计算窗口
-MIN_GRID_SPACING = 0.0005 # 最小网格间距
-MAX_GRID_SPACING = 0.005  # 最大网格间距
+# 注意：已删除装死模式相关配置
+# POSITION_THRESHOLD - 已删除，不再使用装死模式
+# POSITION_LIMIT, MAX_POSITION_RATIO, STOP_LOSS_RATIO, VOLATILITY_WINDOW - 未使用，已删除
+# MIN_GRID_SPACING, MAX_GRID_SPACING - 未使用，已删除
 
 # ==================== 时间配置 ====================
 SYNC_TIME = 10  # 同步时间（秒）

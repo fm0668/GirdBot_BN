@@ -3,8 +3,7 @@ import time
 import logging
 import ccxt
 from config import (
-    GRID_SPACING, INITIAL_QUANTITY, POSITION_THRESHOLD,
-    POSITION_LIMIT, ORDER_FIRST_TIME, SYNC_TIME,
+    GRID_SPACING, INITIAL_QUANTITY, ORDER_FIRST_TIME, SYNC_TIME,
     ORDERS_SYNC_COOLDOWN, FAST_SYNC_COOLDOWN,
     PRICE_CHANGE_THRESHOLD, FAST_MARKET_WINDOW,
     API_WEIGHT_LIMIT_PER_MINUTE, FETCH_ORDERS_WEIGHT, SAFETY_MARGIN,
@@ -226,26 +225,14 @@ class GridStrategy:
                     self.sell_short_orders = max(0.0, self.sell_short_orders - quantity)
 
     def get_base_quantity(self, position, side):
-        """获取基础交易数量（解耦后）"""
-        if side == 'long':
-            if position > POSITION_LIMIT:
-                return INITIAL_QUANTITY * 2
-            else:
-                return INITIAL_QUANTITY
-        elif side == 'short':
-            if position > POSITION_LIMIT:
-                return INITIAL_QUANTITY * 2
-            else:
-                return INITIAL_QUANTITY
+        """获取基础交易数量（简化版本，删除阈值判断）"""
+        # 删除POSITION_LIMIT相关逻辑，始终返回基础数量
+        return INITIAL_QUANTITY
 
     def get_hedge_adjustment_quantity(self, side):
-        """获取对冲调整数量（独立的对冲逻辑）"""
-        if side == 'long' and self.short_position >= POSITION_THRESHOLD:
-            return INITIAL_QUANTITY * 2
-        elif side == 'short' and self.long_position >= POSITION_THRESHOLD:
-            return INITIAL_QUANTITY * 2
-        else:
-            return INITIAL_QUANTITY
+        """获取对冲调整数量（简化版本，删除阈值判断）"""
+        # 删除POSITION_THRESHOLD相关逻辑，始终返回基础数量
+        return INITIAL_QUANTITY
 
     def get_final_quantity(self, position, side):
         """获取最终交易数量（组合逻辑）"""
@@ -349,31 +336,8 @@ class GridStrategy:
         except Exception as e:
             logger.error(f"挂止盈单失败: {e}")
 
-    def check_and_reduce_positions(self):
-        """检查持仓并减少库存风险（改进的动态平仓）"""
-        local_position_threshold = POSITION_THRESHOLD * 0.8
-
-        if (self.long_position >= local_position_threshold and
-            self.short_position >= local_position_threshold):
-            logger.info(f"多头和空头持仓均超过阈值 {local_position_threshold}，开始双向平仓，减少库存风险")
-
-            # 动态计算平仓数量，基于实际持仓
-            long_reduce_qty = min(self.long_position * 0.2, POSITION_THRESHOLD * 0.1)
-            short_reduce_qty = min(self.short_position * 0.2, POSITION_THRESHOLD * 0.1)
-
-            if self.long_position > 0:
-                self.exchange_client.place_order(
-                    'sell', self.best_ask_price, long_reduce_qty,
-                    is_reduce_only=True, position_side='long', order_type='market'
-                )
-                logger.info(f"市价平仓多头 {long_reduce_qty} 个")
-
-            if self.short_position > 0:
-                self.exchange_client.place_order(
-                    'buy', self.best_bid_price, short_reduce_qty,
-                    is_reduce_only=True, position_side='short', order_type='market'
-                )
-                logger.info(f"市价平仓空头 {short_reduce_qty} 个")
+    # 删除check_and_reduce_positions函数，因为它依赖于已删除的POSITION_THRESHOLD
+    # 如果需要风控，可以在其他地方实现不依赖固定阈值的逻辑
 
     async def initialize_long_orders(self):
         """初始化多头订单"""
@@ -454,24 +418,12 @@ class GridStrategy:
         try:
             self.get_take_profit_quantity(self.long_position, 'long')
             if self.long_position > 0:
-                if self.long_position > POSITION_THRESHOLD:
-                    print(f"持仓{self.long_position}超过极限阈值 {POSITION_THRESHOLD}，long装死")
-                    if self.sell_long_orders <= 0:
-                        # 修复：避免除零错误，使用合理的止盈价格
-                        if self.short_position > 0:
-                            ratio = min(self.long_position / self.short_position, 10)  # 限制最大比例
-                            take_profit_price = self.latest_price * (1 + 0.01 * ratio)
-                        else:
-                            take_profit_price = self.latest_price * 1.05  # 默认5%止盈
-
-                        take_profit_price = round(take_profit_price, self.exchange_client.price_precision)
-                        self.place_take_profit_order('long', take_profit_price, self.long_initial_quantity)
-                else:
-                    self.update_mid_price('long', latest_price)
-                    self.cancel_orders_for_side('long')
-                    self.place_take_profit_order('long', self.upper_price_long, self.long_initial_quantity)
-                    self.exchange_client.place_order('buy', self.lower_price_long, self.long_initial_quantity, False, 'long')
-                    logger.info("挂多头止盈，挂多头补仓")
+                # 删除装死模式，始终执行正常网格策略
+                self.update_mid_price('long', latest_price)
+                self.cancel_orders_for_side('long')
+                self.place_take_profit_order('long', self.upper_price_long, self.long_initial_quantity)
+                self.exchange_client.place_order('buy', self.lower_price_long, self.long_initial_quantity, False, 'long')
+                logger.info("挂多头止盈，挂多头补仓")
         except Exception as e:
             logger.error(f"挂多头订单失败: {e}")
 
@@ -480,32 +432,18 @@ class GridStrategy:
         try:
             self.get_take_profit_quantity(self.short_position, 'short')
             if self.short_position > 0:
-                if self.short_position > POSITION_THRESHOLD:
-                    print(f"持仓{self.short_position}超过极限阈值 {POSITION_THRESHOLD}，short 装死")
-                    if self.buy_short_orders <= 0:
-                        # 修复：避免除零错误，使用合理的止盈价格
-                        if self.long_position > 0:
-                            ratio = min(self.short_position / self.long_position, 10)  # 限制最大比例
-                            take_profit_price = self.latest_price * (1 - 0.01 * ratio)  # 空头止盈应该是低于当前价
-                        else:
-                            take_profit_price = self.latest_price * 0.95  # 默认5%止盈
-
-                        take_profit_price = round(take_profit_price, self.exchange_client.price_precision)
-                        logger.info("发现空头止盈单缺失。。需要补止盈单")
-                        self.place_take_profit_order('short', take_profit_price, self.short_initial_quantity)
-                else:
-                    self.update_mid_price('short', latest_price)
-                    self.cancel_orders_for_side('short')
-                    self.place_take_profit_order('short', self.lower_price_short, self.short_initial_quantity)
-                    self.exchange_client.place_order('sell', self.upper_price_short, self.short_initial_quantity, False, 'short')
-                    logger.info("挂空头止盈，挂空头补仓")
+                # 删除装死模式，始终执行正常网格策略
+                self.update_mid_price('short', latest_price)
+                self.cancel_orders_for_side('short')
+                self.place_take_profit_order('short', self.lower_price_short, self.short_initial_quantity)
+                self.exchange_client.place_order('sell', self.upper_price_short, self.short_initial_quantity, False, 'short')
+                logger.info("挂空头止盈，挂空头补仓")
         except Exception as e:
             logger.error(f"挂空头订单失败: {e}")
 
     async def adjust_grid_strategy(self):
-        """根据最新价格和持仓调整网格策略（修复高频API调用问题）"""
-        # 检查双向仓位库存，如果同时达到，就统一部分平仓减少库存风险
-        self.check_and_reduce_positions()
+        """根据最新价格和持仓调整网格策略（删除装死模式后的简化版本）"""
+        # 删除check_and_reduce_positions调用，因为已删除装死模式相关风控
 
         # 对冲初始化模式：同时检查多头和空头是否需要初始化
         if (self.hedge_initialization_enabled and
@@ -543,19 +481,16 @@ class GridStrategy:
             orders_valid = (not (0 < self.buy_long_orders <= self.long_initial_quantity) or
                            not (0 < self.sell_long_orders <= self.long_initial_quantity))
             if orders_valid:
-                if self.long_position < POSITION_THRESHOLD:
-                    # 添加冷却时间检查，避免高频API调用
-                    if self.should_sync_orders():
-                        print('如果 long 持仓没到阈值，同步后再次确认！')
-                        self.check_orders_status()
-                        self.last_orders_sync_time = time.time()
-                        # 重新检查orders_valid状态
-                        orders_valid = (not (0 < self.buy_long_orders <= self.long_initial_quantity) or
-                                       not (0 < self.sell_long_orders <= self.long_initial_quantity))
+                # 删除POSITION_THRESHOLD检查，简化逻辑，添加冷却时间检查避免高频API调用
+                if self.should_sync_orders():
+                    print('如果 long 持仓没到阈值，同步后再次确认！')
+                    self.check_orders_status()
+                    self.last_orders_sync_time = time.time()
+                    # 重新检查orders_valid状态
+                    orders_valid = (not (0 < self.buy_long_orders <= self.long_initial_quantity) or
+                                   not (0 < self.sell_long_orders <= self.long_initial_quantity))
 
-                    if orders_valid:
-                        await self.place_long_orders(self.latest_price)
-                else:
+                if orders_valid:
                     await self.place_long_orders(self.latest_price)
 
         # 检测空头持仓
@@ -571,17 +506,14 @@ class GridStrategy:
             orders_valid = (not (0 < self.sell_short_orders <= self.short_initial_quantity) or
                            not (0 < self.buy_short_orders <= self.short_initial_quantity))
             if orders_valid:
-                if self.short_position < POSITION_THRESHOLD:
-                    # 添加冷却时间检查，避免高频API调用
-                    if self.should_sync_orders():
-                        print('如果 short 持仓没到阈值，同步后再次确认！')
-                        self.check_orders_status()
-                        self.last_orders_sync_time = time.time()
-                        # 重新检查orders_valid状态
-                        orders_valid = (not (0 < self.sell_short_orders <= self.short_initial_quantity) or
-                                       not (0 < self.buy_short_orders <= self.short_initial_quantity))
+                # 删除POSITION_THRESHOLD检查，简化逻辑，添加冷却时间检查避免高频API调用
+                if self.should_sync_orders():
+                    print('如果 short 持仓没到阈值，同步后再次确认！')
+                    self.check_orders_status()
+                    self.last_orders_sync_time = time.time()
+                    # 重新检查orders_valid状态
+                    orders_valid = (not (0 < self.sell_short_orders <= self.short_initial_quantity) or
+                                   not (0 < self.buy_short_orders <= self.short_initial_quantity))
 
-                    if orders_valid:
-                        await self.place_short_orders(self.latest_price)
-                else:
+                if orders_valid:
                     await self.place_short_orders(self.latest_price)
