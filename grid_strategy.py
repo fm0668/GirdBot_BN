@@ -7,9 +7,13 @@ from config import (
     ORDERS_SYNC_COOLDOWN, FAST_SYNC_COOLDOWN,
     PRICE_CHANGE_THRESHOLD, FAST_MARKET_WINDOW,
     API_WEIGHT_LIMIT_PER_MINUTE, FETCH_ORDERS_WEIGHT, SAFETY_MARGIN,
-    ENABLE_HEDGE_INITIALIZATION, HEDGE_INIT_DELAY
+    ENABLE_HEDGE_INITIALIZATION, HEDGE_INIT_DELAY,
+    # 动态数量配置
+    ENABLE_DYNAMIC_QUANTITY, ACCOUNT_USAGE_RATIO, SINGLE_ORDER_RATIO,
+    MIN_ORDER_VALUE, MAX_ORDER_VALUE, QUANTITY_CACHE_DURATION
 )
 from risk_manager import RiskManager
+from quantity_calculator import QuantityCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,16 @@ class GridStrategy:
 
         # 风险管理器
         self.risk_manager = RiskManager(exchange_client, 10)  # 默认10倍杠杆
+
+        # 动态数量计算器
+        self.quantity_calculator = QuantityCalculator(
+            exchange_client=exchange_client,
+            risk_manager=self.risk_manager,
+            account_usage_ratio=ACCOUNT_USAGE_RATIO,
+            single_order_ratio=SINGLE_ORDER_RATIO,
+            min_order_value=MIN_ORDER_VALUE,
+            max_order_value=MAX_ORDER_VALUE
+        )
 
         # 价格相关
         self.latest_price = 0
@@ -229,14 +243,24 @@ class GridStrategy:
                     self.sell_short_orders = max(0.0, self.sell_short_orders - quantity)
 
     def get_base_quantity(self, position, side):
-        """获取基础交易数量（简化版本，删除阈值判断）"""
-        # 删除POSITION_LIMIT相关逻辑，始终返回基础数量
-        return INITIAL_QUANTITY
+        """获取基础交易数量（支持动态计算）"""
+        if ENABLE_DYNAMIC_QUANTITY and self.latest_price > 0:
+            # 使用动态数量计算
+            return self.quantity_calculator.get_quantity_for_grid_order(
+                self.latest_price, position, side
+            )
+        else:
+            # 使用固定数量
+            return INITIAL_QUANTITY
 
     def get_hedge_adjustment_quantity(self, side):
-        """获取对冲调整数量（简化版本，删除阈值判断）"""
-        # 删除POSITION_THRESHOLD相关逻辑，始终返回基础数量
-        return INITIAL_QUANTITY
+        """获取对冲调整数量（支持动态计算）"""
+        if ENABLE_DYNAMIC_QUANTITY and self.latest_price > 0:
+            # 对冲初始化使用更保守的数量
+            return self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+        else:
+            # 使用固定数量
+            return INITIAL_QUANTITY
 
     def get_final_quantity(self, position, side):
         """获取最终交易数量（组合逻辑）"""
@@ -352,8 +376,15 @@ class GridStrategy:
             return
 
         self.cancel_orders_for_side('long')
-        self.exchange_client.place_order('buy', self.best_bid_price, INITIAL_QUANTITY, False, 'long')
-        logger.info(f"挂出多头开仓单: 买入 @ {self.latest_price}")
+
+        # 使用动态数量计算
+        if ENABLE_DYNAMIC_QUANTITY:
+            quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+        else:
+            quantity = INITIAL_QUANTITY
+
+        self.exchange_client.place_order('buy', self.best_bid_price, quantity, False, 'long')
+        logger.info(f"挂出多头开仓单: 买入 {quantity} 张 @ {self.latest_price}")
 
         self.last_long_order_time = time.time()
         logger.info("初始化多头挂单完成")
@@ -367,8 +398,15 @@ class GridStrategy:
             return
 
         self.cancel_orders_for_side('short')
-        self.exchange_client.place_order('sell', self.best_ask_price, INITIAL_QUANTITY, False, 'short')
-        logger.info(f"挂出空头开仓单: 卖出 @ {self.latest_price}")
+
+        # 使用动态数量计算
+        if ENABLE_DYNAMIC_QUANTITY:
+            quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+        else:
+            quantity = INITIAL_QUANTITY
+
+        self.exchange_client.place_order('sell', self.best_ask_price, quantity, False, 'short')
+        logger.info(f"挂出空头开仓单: 卖出 {quantity} 张 @ {self.latest_price}")
 
         self.last_short_order_time = time.time()
         logger.info("初始化空头挂单完成")
@@ -395,9 +433,15 @@ class GridStrategy:
             # 短暂延迟确保撤单完成
             await asyncio.sleep(self.hedge_init_delay)
 
+            # 计算对冲初始化数量
+            if ENABLE_DYNAMIC_QUANTITY:
+                hedge_quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+            else:
+                hedge_quantity = INITIAL_QUANTITY
+
             # 同时挂出多头和空头开仓单
-            long_order = self.exchange_client.place_order('buy', self.best_bid_price, INITIAL_QUANTITY, False, 'long')
-            short_order = self.exchange_client.place_order('sell', self.best_ask_price, INITIAL_QUANTITY, False, 'short')
+            long_order = self.exchange_client.place_order('buy', self.best_bid_price, hedge_quantity, False, 'long')
+            short_order = self.exchange_client.place_order('sell', self.best_ask_price, hedge_quantity, False, 'short')
 
             # 更新时间戳
             current_time = time.time()
