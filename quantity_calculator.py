@@ -38,12 +38,12 @@ class QuantityCalculator:
         self.cached_quantity = 50  # 默认值
         self.cache_duration = 30   # 缓存30秒
         
-    def calculate_optimal_quantity(self, current_price: float, 
+    def calculate_optimal_quantity(self, current_price: float,
                                  current_position: float = 0,
                                  side: str = 'long') -> float:
         """
-        计算最优交易数量
-        
+        计算最优交易数量（支持杠杆优化）
+
         :param current_price: 当前价格
         :param current_position: 当前持仓数量
         :param side: 交易方向 ('long' 或 'short')
@@ -53,42 +53,42 @@ class QuantityCalculator:
         current_time = time.time()
         if current_time - self.last_calculation_time < self.cache_duration:
             return self.cached_quantity
-            
+
         try:
             # 确保风险管理器数据是最新的
             if self.risk_manager.should_update_account_info():
                 self.risk_manager.update_account_info()
-                
+
             # 获取账户信息
             available_balance = self.risk_manager.available_balance
             account_balance = self.risk_manager.account_balance
-            
+
             if available_balance <= 0 or account_balance <= 0:
                 logger.warning("账户余额不足，使用最小交易数量")
                 return self._get_min_quantity(current_price)
-                
-            # 计算基于资金的最优数量
-            optimal_quantity = self._calculate_by_funds(current_price, available_balance)
-            
+
+            # 检查是否启用杠杆优化计算
+            from config import LEVERAGE_BASED_CALCULATION
+            if LEVERAGE_BASED_CALCULATION:
+                optimal_quantity = self._calculate_leverage_optimized_quantity(current_price)
+            else:
+                # 使用原有的资金计算方法
+                optimal_quantity = self._calculate_by_funds(current_price, available_balance)
+
             # 应用风险控制
             safe_quantity = self._apply_risk_controls(
                 optimal_quantity, current_price, current_position, side
             )
-            
+
             # 应用交易所限制
             final_quantity = self._apply_exchange_limits(safe_quantity, current_price)
-            
+
             # 更新缓存
             self.cached_quantity = final_quantity
             self.last_calculation_time = current_time
-            
-            logger.info(f"💡 动态数量计算 - 价格: {current_price:.5f}, "
-                       f"可用资金: {available_balance:.2f} USDC, "
-                       f"计算数量: {final_quantity:.0f} 张, "
-                       f"订单价值: {final_quantity * current_price:.2f} USDC")
-            
+
             return final_quantity
-            
+
         except Exception as e:
             logger.error(f"动态数量计算失败: {e}")
             return self._get_min_quantity(current_price)
@@ -114,7 +114,41 @@ class QuantityCalculator:
                     f"平均值: {optimal_quantity:.1f}")
         
         return optimal_quantity
-        
+
+    def _calculate_leverage_optimized_quantity(self, current_price: float) -> float:
+        """基于杠杆和总权益的优化数量计算"""
+        from config import LEVERAGE_ORDER_RATIO, USE_TOTAL_EQUITY, LEVERAGE
+
+        # 获取基准资金：直接使用总权益
+        base_capital = self.risk_manager.account_balance
+
+        # 计算杠杆后的理论资金池
+        theoretical_capital = base_capital * LEVERAGE
+
+        # 计算目标订单名义价值
+        target_order_value = theoretical_capital * LEVERAGE_ORDER_RATIO
+
+        # 转换为数量
+        target_quantity = target_order_value / current_price
+
+        # 保证金安全检查
+        required_margin = target_quantity * current_price / LEVERAGE
+        available_margin = self.risk_manager.available_balance * 0.9
+
+        if required_margin > available_margin:
+            # 保证金不足时的安全调整
+            safe_quantity = (available_margin * LEVERAGE) / current_price
+            logger.warning(f"⚠️ 保证金限制，订单调整: {target_quantity:.0f} → {safe_quantity:.0f}")
+            return safe_quantity
+
+        logger.info(f"💡 杠杆优化计算 - 总权益: {base_capital:.2f} USDC, "
+                   f"杠杆后资金池: {theoretical_capital:.2f} USDC, "
+                   f"目标订单价值: {target_order_value:.2f} USDC, "
+                   f"计算数量: {target_quantity:.0f} 张, "
+                   f"所需保证金: {required_margin:.2f} USDC")
+
+        return target_quantity
+
     def _apply_risk_controls(self, quantity: float, current_price: float,
                            current_position: float, side: str) -> float:
         """应用风险控制"""
