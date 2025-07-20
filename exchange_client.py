@@ -418,3 +418,61 @@ class ExchangeClient:
             logger.warning(f"账户清理不完整：剩余挂单 {len(final_orders)} 个，多头持仓 {final_long}，空头持仓 {final_short}")
             logger.info("=" * 50)
             return False
+
+    def fetch_account_summary(self):
+        """获取账户财务数据摘要"""
+        try:
+            balance_info = self.exchange.fetch_balance()
+
+            # 获取USDC余额信息（合约交易的计价货币）
+            usdc_info = balance_info.get('USDC', {})
+            if not usdc_info:
+                # 如果没有USDC，尝试USDT
+                usdc_info = balance_info.get('USDT', {})
+
+            account_summary = {
+                'account_balance': float(usdc_info.get('total', 0)),  # 账户总权益
+                'available_balance': float(usdc_info.get('free', 0)),  # 可用余额
+                'used_balance': float(usdc_info.get('used', 0)),      # 已用保证金
+                'currency': 'USDC' if 'USDC' in balance_info else 'USDT'
+            }
+
+            logger.debug(f"账户摘要: {account_summary}")
+            return account_summary
+
+        except Exception as e:
+            logger.error(f"获取账户摘要失败: {e}")
+            return {
+                'account_balance': 0,
+                'available_balance': 0,
+                'used_balance': 0,
+                'currency': 'USDC'
+            }
+
+    def fetch_detailed_positions_for_symbol(self, symbol):
+        """获取指定交易对的详细持仓数据"""
+        try:
+            positions = self.exchange.fetch_positions([symbol])
+
+            detailed_positions = []
+            for position in positions:
+                if position['symbol'] == symbol and float(position.get('contracts', 0)) != 0:
+                    position_detail = {
+                        'symbol': position['symbol'],
+                        'side': position['side'],  # 'long' or 'short'
+                        'size': float(position.get('contracts', 0)),  # 持仓数量
+                        'unrealized_pnl': float(position.get('unrealizedPnl', 0)),  # 未实现盈亏
+                        'percentage': float(position.get('percentage', 0)),  # 盈亏百分比
+                        'entry_price': float(position.get('entryPrice', 0)),  # 开仓均价
+                        'mark_price': float(position.get('markPrice', 0)),  # 标记价格
+                        'notional': float(position.get('notional', 0)),  # 名义价值
+                        'margin': float(position.get('initialMargin', 0))  # 初始保证金
+                    }
+                    detailed_positions.append(position_detail)
+
+            logger.debug(f"详细持仓数据: {detailed_positions}")
+            return detailed_positions
+
+        except Exception as e:
+            logger.error(f"获取详细持仓数据失败: {e}")
+            return []

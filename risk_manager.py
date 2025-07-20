@@ -25,69 +25,66 @@ class RiskManager:
         self.last_position_update = 0
         
     def update_account_info(self):
-        """更新账户信息（简化版本，兼容现有ExchangeClient）"""
+        """更新账户信息（使用真实交易所数据）"""
         try:
-            # 使用现有的get_account_balance方法
-            if hasattr(self.exchange_client, 'get_account_balance'):
-                balance_info = self.exchange_client.get_account_balance()
-                self.account_balance = float(balance_info.get('totalWalletBalance', 0))
-                self.available_balance = float(balance_info.get('availableBalance', 0))
+            # 使用新的fetch_account_summary方法获取真实数据
+            account_summary = self.exchange_client.fetch_account_summary()
 
-                # 计算保证金使用率
-                used_margin = self.account_balance - self.available_balance
-                self.margin_ratio = used_margin / self.account_balance if self.account_balance > 0 else 0
+            self.account_balance = account_summary['account_balance']
+            self.available_balance = account_summary['available_balance']
 
-                logger.debug(f"账户余额: {self.account_balance:.2f} USDC, "
-                           f"可用余额: {self.available_balance:.2f} USDC, "
-                           f"保证金使用率: {self.margin_ratio:.2%}")
-                self.last_balance_check = time.time()
-            else:
-                # 如果没有相应方法，使用默认值
-                logger.debug("ExchangeClient不支持账户余额查询，使用默认值")
-                self.account_balance = 1000  # 默认值
-                self.available_balance = 500  # 默认值
-                self.margin_ratio = 0.5
+            # 计算保证金使用率
+            used_margin = account_summary['used_balance']
+            self.margin_ratio = used_margin / self.account_balance if self.account_balance > 0 else 0
+
+            logger.info(f"💰 账户数据更新 - 总权益: {self.account_balance:.2f} {account_summary['currency']}, "
+                       f"可用余额: {self.available_balance:.2f} {account_summary['currency']}, "
+                       f"保证金使用率: {self.margin_ratio:.2%}")
+            self.last_balance_check = time.time()
 
         except Exception as e:
-            logger.debug(f"更新账户信息失败，使用默认值: {e}")
+            logger.error(f"更新账户信息失败: {e}")
+            # 使用保守的默认值
             self.account_balance = 1000
             self.available_balance = 500
             self.margin_ratio = 0.5
 
     def update_position_info(self, symbol: str):
-        """更新持仓信息（简化版本，兼容现有ExchangeClient）"""
+        """更新持仓信息（使用真实交易所数据）"""
         try:
-            # 使用现有的get_positions方法
-            if hasattr(self.exchange_client, 'get_positions'):
-                positions = self.exchange_client.get_positions()
+            # 使用新的fetch_detailed_positions_for_symbol方法获取真实数据
+            detailed_positions = self.exchange_client.fetch_detailed_positions_for_symbol(symbol)
 
-                total_unrealized_pnl = 0
-                position_data = {}
+            total_unrealized_pnl = 0
+            position_data = {}
 
-                for position in positions:
-                    if position.get('symbol') == symbol:
-                        side = position.get('positionSide', '').lower()
-                        if side in ['long', 'short']:
-                            unrealized_pnl = float(position.get('unrealizedPnl', 0))
-                            position_data[side] = {
-                                'size': float(position.get('positionAmt', 0)),
-                                'unrealized_pnl': unrealized_pnl,
-                                'percentage': float(position.get('percentage', 0)),
-                                'entry_price': float(position.get('entryPrice', 0)),
-                                'mark_price': float(position.get('markPrice', 0))
-                            }
-                            total_unrealized_pnl += unrealized_pnl
+            for position in detailed_positions:
+                side = position['side']
+                if side in ['long', 'short']:
+                    position_data[side] = {
+                        'size': position['size'],
+                        'unrealized_pnl': position['unrealized_pnl'],
+                        'percentage': position['percentage'],
+                        'entry_price': position['entry_price'],
+                        'mark_price': position['mark_price'],
+                        'notional': position['notional'],
+                        'margin': position['margin']
+                    }
+                    total_unrealized_pnl += position['unrealized_pnl']
 
-                self.position_cache[symbol] = position_data
-                self.total_unrealized_pnl = total_unrealized_pnl
-                self.last_position_update = time.time()
+            self.position_cache[symbol] = position_data
+            self.total_unrealized_pnl = total_unrealized_pnl
+            self.last_position_update = time.time()
 
-                logger.debug(f"更新持仓信息: {symbol}, 总未实现盈亏: {total_unrealized_pnl:.2f}")
-            else:
-                logger.debug("ExchangeClient不支持持仓信息查询")
+            if detailed_positions:
+                logger.info(f"📊 持仓数据更新 - {symbol}, 总未实现盈亏: {total_unrealized_pnl:.2f} USDC")
+                for side, data in position_data.items():
+                    logger.info(f"   {side.upper()}: {data['size']} 张, "
+                               f"盈亏: {data['unrealized_pnl']:.2f} ({data['percentage']:.2%}), "
+                               f"开仓价: {data['entry_price']:.5f}, 标记价: {data['mark_price']:.5f}")
 
         except Exception as e:
-            logger.debug(f"更新持仓信息失败: {e}")
+            logger.error(f"更新持仓信息失败: {e}")
             
     def get_position_pnl(self, symbol: str, side: str) -> float:
         """获取指定持仓的未实现盈亏"""

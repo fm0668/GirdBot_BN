@@ -472,8 +472,97 @@ class GridStrategy:
             logger.debug(f"获取风险指标失败: {e}")
 
     async def adjust_grid_strategy(self):
-        """根据最新价格和持仓调整网格策略（删除装死模式后的简化版本）"""
-        # 删除check_and_reduce_positions调用，因为已删除装死模式相关风控
+        """根据最新价格和持仓调整网格策略（集成真实风控决策）"""
+
+        # ==================== 第一步：定期更新风控数据 ====================
+        # 风险检查是最高优先级的，必须在做任何开仓决策之前进行
+        if self.risk_manager.should_update_account_info():
+            self.risk_manager.update_account_info()
+
+        if self.risk_manager.should_update_position_info():
+            self.risk_manager.update_position_info(self.exchange_client.ccxt_symbol)
+
+        # ==================== 第二步：多头仓位风险审查与执行 ====================
+        if self.long_position > 0:
+            # 计算多头仓位的名义价值
+            long_notional_value = self.long_position * self.latest_price
+
+            # 获取风控决策
+            risk_decision = self.risk_manager.should_reduce_position(
+                self.exchange_client.ccxt_symbol, 'long', long_notional_value
+            )
+
+            if risk_decision['should_reduce']:
+                # 打印明确的警告日志，用于事后复盘
+                logger.warning(f"🚨 多头风控触发: {risk_decision['reason']}")
+                logger.warning(f"   风险等级: {risk_decision['urgency']}")
+                logger.warning(f"   建议减仓比例: {risk_decision['suggested_ratio']:.1%}")
+
+                # 判断紧急程度
+                if risk_decision['urgency'] in ['HIGH', 'MEDIUM']:
+                    # 计算要减仓的数量
+                    reduce_qty = self.long_position * risk_decision['suggested_ratio']
+                    reduce_qty = round(reduce_qty, self.exchange_client.amount_precision)
+                    reduce_qty = max(reduce_qty, self.exchange_client.min_order_amount)
+
+                    logger.warning(f"🔥 执行紧急减仓: 卖出 {reduce_qty} 张多头仓位")
+
+                    # 下达市价减仓订单
+                    order = self.exchange_client.place_order(
+                        'sell', None, reduce_qty,
+                        is_reduce_only=True, position_side='LONG', order_type='market'
+                    )
+
+                    if order:
+                        logger.warning(f"✅ 多头减仓订单提交成功: {order.get('id', 'N/A')}")
+                    else:
+                        logger.error(f"❌ 多头减仓订单提交失败")
+
+                    # 执行减仓后立即返回，跳过本次网格逻辑
+                    return
+
+        # ==================== 第三步：空头仓位风险审查与执行 ====================
+        if self.short_position > 0:
+            # 计算空头仓位的名义价值
+            short_notional_value = self.short_position * self.latest_price
+
+            # 获取风控决策
+            risk_decision = self.risk_manager.should_reduce_position(
+                self.exchange_client.ccxt_symbol, 'short', short_notional_value
+            )
+
+            if risk_decision['should_reduce']:
+                # 打印明确的警告日志，用于事后复盘
+                logger.warning(f"🚨 空头风控触发: {risk_decision['reason']}")
+                logger.warning(f"   风险等级: {risk_decision['urgency']}")
+                logger.warning(f"   建议减仓比例: {risk_decision['suggested_ratio']:.1%}")
+
+                # 判断紧急程度
+                if risk_decision['urgency'] in ['HIGH', 'MEDIUM']:
+                    # 计算要减仓的数量
+                    reduce_qty = self.short_position * risk_decision['suggested_ratio']
+                    reduce_qty = round(reduce_qty, self.exchange_client.amount_precision)
+                    reduce_qty = max(reduce_qty, self.exchange_client.min_order_amount)
+
+                    logger.warning(f"🔥 执行紧急减仓: 买入 {reduce_qty} 张空头仓位")
+
+                    # 下达市价减仓订单
+                    order = self.exchange_client.place_order(
+                        'buy', None, reduce_qty,
+                        is_reduce_only=True, position_side='SHORT', order_type='market'
+                    )
+
+                    if order:
+                        logger.warning(f"✅ 空头减仓订单提交成功: {order.get('id', 'N/A')}")
+                    else:
+                        logger.error(f"❌ 空头减仓订单提交失败")
+
+                    # 执行减仓后立即返回，跳过本次网格逻辑
+                    return
+
+        # ==================== 第四步：执行常规网格逻辑 ====================
+        # 如果代码能执行到这里，说明风险审查通过，一切正常
+        # 此时，才继续执行后续的对冲初始化、挂多头单、挂空头单等常规的网格交易逻辑
 
         # 对冲初始化模式：同时检查多头和空头是否需要初始化
         if (self.hedge_initialization_enabled and
