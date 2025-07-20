@@ -188,8 +188,8 @@ class WebSocketHandler:
             # 定期同步持仓和订单状态
             await self.sync_positions_and_orders()
 
-            # 执行网格策略
-            await self.grid_strategy.adjust_grid_strategy()
+            # 事件驱动：触发价格更新事件，而非直接执行策略
+            await self.grid_strategy.on_price_update(self.latest_price)
 
     async def sync_positions_and_orders(self):
         """定期同步持仓和订单状态"""
@@ -219,5 +219,7 @@ class WebSocketHandler:
                 symbol = order.get("s")
                 
                 if symbol == f"{self.coin_name}{self.contract_type}":
-                    # 将订单更新传递给网格策略处理
+                    # 事件驱动：触发订单更新事件
+                    await self.grid_strategy.on_order_update(order)
+                    # 同时保留原有的订单处理逻辑
                     await self.grid_strategy.handle_order_update(order)

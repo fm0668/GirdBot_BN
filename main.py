@@ -135,6 +135,9 @@ class GridTradingBot:
             # 启动WebSocket处理器
             websocket_task = asyncio.create_task(self.websocket_handler.start())
 
+            # 启动事件驱动主循环
+            strategy_loop_task = asyncio.create_task(self.grid_strategy.main_strategy_loop())
+
             # 监控停止信号和风险指标
             risk_log_counter = 0
             while not self.stop_signal:
@@ -146,14 +149,20 @@ class GridTradingBot:
                     self.grid_strategy.log_risk_metrics()
                     risk_log_counter = 0
 
-            # 收到停止信号，取消WebSocket任务
-            logger.info("收到停止信号，正在停止WebSocket...")
+            # 收到停止信号，优雅关闭
+            logger.info("收到停止信号，正在优雅关闭...")
+
+            # 停止策略主循环
+            await self.grid_strategy.shutdown()
+            strategy_loop_task.cancel()
+
+            # 停止WebSocket
             websocket_task.cancel()
 
             try:
-                await websocket_task
+                await asyncio.gather(websocket_task, strategy_loop_task, return_exceptions=True)
             except asyncio.CancelledError:
-                logger.info("WebSocket任务已取消")
+                logger.info("所有任务已取消")
 
         except Exception as e:
             if not self.stop_signal:
