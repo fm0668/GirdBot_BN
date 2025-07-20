@@ -1,0 +1,55 @@
+# 网格交易机器人依赖包
+# =============================================================================
+
+# 核心交易库
+ccxt>=4.0.0                    # 加密货币交易所统一API库
+
+# 异步编程
+asyncio                        # Python异步编程库 (内置)
+
+# WebSocket支持
+websockets>=11.0.0             # WebSocket客户端和服务器库
+
+# 数据处理
+numpy>=1.24.0                  # 数值计算库 (用于波动率计算)
+
+# HTTP请求
+requests>=2.31.0               # HTTP库 (ccxt依赖)
+
+# 加密和安全
+cryptography>=41.0.0           # 加密库 (API签名)
+
+# 时间处理
+python-dateutil>=2.8.0         # 日期时间处理
+
+# JSON处理 (内置)
+# json                         # JSON编解码 (内置)
+
+# 日志记录 (内置)
+# logging                      # 日志记录 (内置)
+
+# 系统和文件操作 (内置)
+# os                           # 操作系统接口 (内置)
+# sys                          # 系统特定参数和函数 (内置)
+# time                         # 时间相关函数 (内置)
+
+# 数据结构
+# collections                  # 专用容器数据类型 (内置)
+
+# 可选：性能优化
+# uvloop>=0.17.0              # 高性能事件循环 (Linux/macOS)
+
+# 可选：监控和指标
+# psutil>=5.9.0               # 系统和进程监控
+
+# 开发和调试 (可选)
+# ipython>=8.0.0              # 交互式Python shell
+# jupyter>=1.0.0              # Jupyter notebook
+
+# =============================================================================
+# 安装说明:
+# pip3 install -r requirements.txt
+# 
+# 或者逐个安装核心依赖:
+# pip3 install ccxt websockets numpy requests cryptography python-dateutil
+# =============================================================================
