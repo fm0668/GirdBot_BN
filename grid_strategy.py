@@ -8,14 +8,15 @@ from config import (
     PRICE_CHANGE_THRESHOLD, FAST_MARKET_WINDOW,
     API_WEIGHT_LIMIT_PER_MINUTE, FETCH_ORDERS_WEIGHT, SAFETY_MARGIN,
     ENABLE_HEDGE_INITIALIZATION, HEDGE_INIT_DELAY,
-    # 动态数量配置
-    ENABLE_DYNAMIC_QUANTITY, ACCOUNT_USAGE_RATIO, SINGLE_ORDER_RATIO,
-    MIN_ORDER_VALUE, MAX_ORDER_VALUE, QUANTITY_CACHE_DURATION,
-    # 杠杆优化配置
-    LEVERAGE_BASED_CALCULATION, LEVERAGE_ORDER_RATIO, USE_TOTAL_EQUITY
+    # 动态数量配置 - 已禁用，使用固定数量
+    ENABLE_DYNAMIC_QUANTITY
+    # ACCOUNT_USAGE_RATIO, SINGLE_ORDER_RATIO,
+    # MIN_ORDER_VALUE, MAX_ORDER_VALUE, QUANTITY_CACHE_DURATION,
+    # 杠杆优化配置 - 已禁用
+    # LEVERAGE_BASED_CALCULATION, LEVERAGE_ORDER_RATIO, USE_TOTAL_EQUITY
 )
 from risk_manager import RiskManager
-from quantity_calculator import QuantityCalculator
+# from quantity_calculator import QuantityCalculator  # 已禁用动态数量计算
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +31,15 @@ class GridStrategy:
         # 风险管理器
         self.risk_manager = RiskManager(exchange_client, 10)  # 默认10倍杠杆
 
-        # 动态数量计算器
-        self.quantity_calculator = QuantityCalculator(
-            exchange_client=exchange_client,
-            risk_manager=self.risk_manager,
-            account_usage_ratio=ACCOUNT_USAGE_RATIO,
-            single_order_ratio=SINGLE_ORDER_RATIO,
-            min_order_value=MIN_ORDER_VALUE,
-            max_order_value=MAX_ORDER_VALUE
-        )
+        # 动态数量计算器 - 已禁用，使用固定数量 INITIAL_QUANTITY
+        # self.quantity_calculator = QuantityCalculator(
+        #     exchange_client=exchange_client,
+        #     risk_manager=self.risk_manager,
+        #     account_usage_ratio=ACCOUNT_USAGE_RATIO,
+        #     single_order_ratio=SINGLE_ORDER_RATIO,
+        #     min_order_value=MIN_ORDER_VALUE,
+        #     max_order_value=MAX_ORDER_VALUE
+        # )
 
         # 价格相关
         self.latest_price = 0
@@ -245,24 +246,28 @@ class GridStrategy:
                     self.sell_short_orders = max(0.0, self.sell_short_orders - quantity)
 
     def get_base_quantity(self, position, side):
-        """获取基础交易数量（支持动态计算）"""
-        if ENABLE_DYNAMIC_QUANTITY and self.latest_price > 0:
-            # 使用动态数量计算
-            return self.quantity_calculator.get_quantity_for_grid_order(
-                self.latest_price, position, side
-            )
-        else:
-            # 使用固定数量
-            return INITIAL_QUANTITY
+        """获取基础交易数量（已简化为固定数量）"""
+        # 直接使用固定数量，不再使用动态计算
+        return INITIAL_QUANTITY
+        # if ENABLE_DYNAMIC_QUANTITY and self.latest_price > 0:
+        #     # 使用动态数量计算
+        #     return self.quantity_calculator.get_quantity_for_grid_order(
+        #         self.latest_price, position, side
+        #     )
+        # else:
+        #     # 使用固定数量
+        #     return INITIAL_QUANTITY
 
     def get_hedge_adjustment_quantity(self, side):
-        """获取对冲调整数量（支持动态计算）"""
-        if ENABLE_DYNAMIC_QUANTITY and self.latest_price > 0:
-            # 对冲初始化使用更保守的数量
-            return self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
-        else:
-            # 使用固定数量
-            return INITIAL_QUANTITY
+        """获取对冲调整数量（已简化为固定数量）"""
+        # 直接使用固定数量，不再使用动态计算
+        return INITIAL_QUANTITY
+        # if ENABLE_DYNAMIC_QUANTITY and self.latest_price > 0:
+        #     # 对冲初始化使用更保守的数量
+        #     return self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+        # else:
+        #     # 使用固定数量
+        #     return INITIAL_QUANTITY
 
     def get_final_quantity(self, position, side):
         """获取最终交易数量（组合逻辑）"""
@@ -379,11 +384,12 @@ class GridStrategy:
 
         self.cancel_orders_for_side('long')
 
-        # 使用动态数量计算
-        if ENABLE_DYNAMIC_QUANTITY:
-            quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
-        else:
-            quantity = INITIAL_QUANTITY
+        # 使用固定数量，不再使用动态计算
+        quantity = INITIAL_QUANTITY
+        # if ENABLE_DYNAMIC_QUANTITY:
+        #     quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+        # else:
+        #     quantity = INITIAL_QUANTITY
 
         self.exchange_client.place_order('buy', self.best_bid_price, quantity, False, 'long')
         logger.info(f"挂出多头开仓单: 买入 {quantity} 张 @ {self.latest_price}")
@@ -401,11 +407,12 @@ class GridStrategy:
 
         self.cancel_orders_for_side('short')
 
-        # 使用动态数量计算
-        if ENABLE_DYNAMIC_QUANTITY:
-            quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
-        else:
-            quantity = INITIAL_QUANTITY
+        # 使用固定数量，不再使用动态计算
+        quantity = INITIAL_QUANTITY
+        # if ENABLE_DYNAMIC_QUANTITY:
+        #     quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+        # else:
+        #     quantity = INITIAL_QUANTITY
 
         self.exchange_client.place_order('sell', self.best_ask_price, quantity, False, 'short')
         logger.info(f"挂出空头开仓单: 卖出 {quantity} 张 @ {self.latest_price}")
@@ -435,11 +442,12 @@ class GridStrategy:
             # 短暂延迟确保撤单完成
             await asyncio.sleep(self.hedge_init_delay)
 
-            # 计算对冲初始化数量
-            if ENABLE_DYNAMIC_QUANTITY:
-                hedge_quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
-            else:
-                hedge_quantity = INITIAL_QUANTITY
+            # 使用固定数量，不再使用动态计算
+            hedge_quantity = INITIAL_QUANTITY
+            # if ENABLE_DYNAMIC_QUANTITY:
+            #     hedge_quantity = self.quantity_calculator.get_quantity_for_hedge_init(self.latest_price)
+            # else:
+            #     hedge_quantity = INITIAL_QUANTITY
 
             # 同时挂出多头和空头开仓单
             long_order = self.exchange_client.place_order('buy', self.best_bid_price, hedge_quantity, False, 'long')

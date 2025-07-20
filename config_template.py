@@ -1,19 +1,29 @@
-# ==================== 配置文件模板 ====================
-# 使用说明：
-# 1. 复制此文件为 config.py
-# 2. 填入你的API密钥和其他配置参数
-# 3. config.py 已被添加到 .gitignore，不会被上传到GitHub
+# ==================== 配置文件 ====================
+# 注意：请将此文件添加到 .gitignore 中，避免API密钥泄露
 
 # ==================== API 配置 ====================
-API_KEY = "your_api_key_here"  # 替换为你的 API Key
-API_SECRET = "your_api_secret_here"  # 替换为你的 API Secret
+API_KEY = ""  # 替换为你的 API Key
+API_SECRET = ""  # 替换为你的 API Secret
 
 # ==================== 交易配置 ====================
 COIN_NAME = "DOGE"  # 交易币种
 CONTRACT_TYPE = "USDC"  # 合约类型：USDT 或 USDC
 GRID_SPACING = 0.001  # 网格间距 (0.1%)
-INITIAL_QUANTITY = 20  # 初始交易数量 (币数量) - 确保订单价值大于5 USDC
-LEVERAGE = 10  # 杠杆倍数
+INITIAL_QUANTITY = 50  # 初始交易数量 (币数量) - 确保订单价值大于5 USDC (DOGE约0.12，50*0.12=6 USDC)
+LEVERAGE = 20  # 杠杆倍数
+
+# ==================== 动态数量配置 ====================
+ENABLE_DYNAMIC_QUANTITY = True   # 是否启用动态数量计算
+ACCOUNT_USAGE_RATIO = 0.6        # 账户资金使用比例 (60%)
+SINGLE_ORDER_RATIO = 0.1         # 单笔订单占可用资金比例 (10%)
+MIN_ORDER_VALUE = 5.0            # 最小订单价值 (USDC)
+MAX_ORDER_VALUE = 100.0          # 最大订单价值 (USDC)
+QUANTITY_CACHE_DURATION = 30     # 数量计算缓存时间 (秒)
+
+# ==================== 杠杆优化配置 ====================
+LEVERAGE_BASED_CALCULATION = True   # 启用基于杠杆的资金计算
+LEVERAGE_ORDER_RATIO = 0.04         # 单笔订单占杠杆后资金的比例 (4%)
+USE_TOTAL_EQUITY = True              # 使用总权益而非可用余额作为基准
 
 # ==================== WebSocket 配置 ====================
 WEBSOCKET_URL = "wss://fstream.binance.com/ws"  # WebSocket URL

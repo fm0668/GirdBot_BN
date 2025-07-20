@@ -67,14 +67,19 @@ show_recent_logs() {
     echo "============================================================"
     echo -e "${CYAN}                最新运行日志${NC}"
     echo "============================================================"
-    
-    # 查找最新的日志文件
-    local latest_log=$(ls -t $LOG_DIR/grid_bot_*.log 2>/dev/null | head -1)
-    
-    if [ -n "$latest_log" ] && [ -f "$latest_log" ]; then
+
+    # 优先查找main.log，然后查找最新的grid_bot日志文件
+    local latest_log=""
+    if [ -f "$LOG_DIR/main.log" ] && [ -s "$LOG_DIR/main.log" ]; then
+        latest_log="$LOG_DIR/main.log"
+    else
+        latest_log=$(ls -t $LOG_DIR/grid_bot_*.log 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$latest_log" ] && [ -f "$latest_log" ] && [ -s "$latest_log" ]; then
         print_message $BLUE "日志文件: $latest_log"
         echo ""
-        
+
         # 显示最后50行日志
         tail -50 "$latest_log" | while IFS= read -r line; do
             # 根据日志级别着色
@@ -97,7 +102,7 @@ show_recent_logs() {
             fi
         done
     else
-        print_message $RED "未找到日志文件"
+        print_message $RED "未找到有效的日志文件"
     fi
     echo ""
 }
@@ -107,10 +112,16 @@ show_trading_stats() {
     echo "============================================================"
     echo -e "${CYAN}                交易统计信息${NC}"
     echo "============================================================"
-    
-    local latest_log=$(ls -t $LOG_DIR/grid_bot_*.log 2>/dev/null | head -1)
-    
-    if [ -n "$latest_log" ] && [ -f "$latest_log" ]; then
+
+    # 优先查找main.log，然后查找最新的grid_bot日志文件
+    local latest_log=""
+    if [ -f "$LOG_DIR/main.log" ] && [ -s "$LOG_DIR/main.log" ]; then
+        latest_log="$LOG_DIR/main.log"
+    else
+        latest_log=$(ls -t $LOG_DIR/grid_bot_*.log 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$latest_log" ] && [ -f "$latest_log" ] && [ -s "$latest_log" ]; then
         # 统计订单数量
         local buy_orders=$(grep -c "下单成功.*buy" "$latest_log" 2>/dev/null || echo "0")
         local sell_orders=$(grep -c "下单成功.*sell" "$latest_log" 2>/dev/null || echo "0")
@@ -168,10 +179,16 @@ real_time_monitor() {
     echo -e "${CYAN}              实时日志监控模式${NC}"
     echo -e "${YELLOW}按 Ctrl+C 退出监控${NC}"
     echo "============================================================"
-    
-    local latest_log=$(ls -t $LOG_DIR/grid_bot_*.log 2>/dev/null | head -1)
-    
-    if [ -n "$latest_log" ] && [ -f "$latest_log" ]; then
+
+    # 优先查找main.log，然后查找最新的grid_bot日志文件
+    local latest_log=""
+    if [ -f "$LOG_DIR/main.log" ] && [ -s "$LOG_DIR/main.log" ]; then
+        latest_log="$LOG_DIR/main.log"
+    else
+        latest_log=$(ls -t $LOG_DIR/grid_bot_*.log 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$latest_log" ] && [ -f "$latest_log" ] && [ -s "$latest_log" ]; then
         tail -f "$latest_log" | while IFS= read -r line; do
             # 根据内容着色显示
             if [[ $line == *"ERROR"* ]]; then
